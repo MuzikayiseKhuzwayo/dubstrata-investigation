@@ -78,92 +78,38 @@ async function main() {
   logger.info(`🧠 Investigating contrarian conflicts for: "${mainEntity}"...`);
   const conflicts = await harness.dubstrata.findConflicts(mainEntity);
 
-  // 4. Formulate causal decision
-  let decision: 'YES' | 'NO' | 'HOLD' = 'HOLD';
-  let confidence = 0.50;
-  let betAmount = 0.00;
-  let reasoning = '';
+  // Evaluate compliance mandate for sizing checks
+  const dailySpent = harness.auditLogger.getDailySpentUSD('antigravity-fund-manager');
+  const mandateEvaluation = harness.verifier.evaluateTrade(
+    'antigravity-fund-manager',
+    market.category,
+    250, // standard check size
+    dailySpent
+  );
 
-  const hasCausalError = 
-    graphContext.includes('Error querying graph') ||
-    graphContext.includes('NameResolutionError') ||
-    graphContext.includes('HTTPConnectionPool');
-
-  if (hasCausalError) {
-    decision = 'HOLD';
-    confidence = 0.0;
-    betAmount = 0.0;
-    reasoning = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--danger-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🚫 DUBSTRATA DATABASE ACCESS ERROR</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">The cloud database is currently unreachable. Trading suspended to protect capital.</span>
-  </div>
-</div>
-    `.trim();
-    logger.warn('🚫 Causal query error detected. Enforcing capital protection HOLD.');
-  } else {
-    // Weather decision heuristic
-    if (market.question.toLowerCase().includes('temperature') || market.slug.toLowerCase().includes('temperature')) {
-      decision = 'NO';
-      confidence = 0.95;
-      betAmount = 250.00;
-      reasoning = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">📊 Causal Information Analysis</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">Target city climatology records show extreme peaks are statistical outliers with zero active thermal pressure triggers. Warsaw/Chengdu standard deviation bounds are highly consistent.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">💡 Meaning &amp; Odds Implications</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">The implied probability of ${Math.round(parseFloat(market.outcomePrices[0])*100)}% on YES represents retail speculative noise. The actual causal probability is virtually 0%.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--success-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;"><strong>BUY NO position executed.</strong> Capturing mispriced spreads to lock in short-term margins.</span>
-  </div>
-</div>
-      `.trim();
-    } else {
-      decision = 'NO';
-      confidence = 0.70;
-      betAmount = 250.00;
-      reasoning = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">📊 Causal Information Analysis</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">General causal context shows stable trendlines. Speculative spikes represent order-book exhaustion.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">💡 Meaning &amp; Odds Implications</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">Misalignment is around 10-15%, presenting minor arbitrage.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--success-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;"><strong>BUY NO position executed.</strong> Executing stable return on simulated balance.</span>
-  </div>
-</div>
-      `.trim();
+  // 4. Formulate causal decision via Causal LLM Sensor
+  logger.info('Formulating investment decision via live causal validation sensor...');
+  const evaluation = await harness.evaluateTradeDecisionViaLLM(market, {
+    graphContext,
+    facts,
+    conflicts,
+    mandateEvaluation: {
+      allowed: mandateEvaluation.allowed,
+      reason: mandateEvaluation.reason
     }
-  }
+  });
+
+  const { decision, confidence, betAmount, reasoning } = evaluation;
 
   // 5. Place simulated CLOB order or log HOLD block
   try {
     if (decision === 'HOLD') {
-      const dailySpent = harness.auditLogger.getDailySpentUSD('antigravity-fund-manager');
-      const mandateResult = harness.verifier.evaluateTrade(
-        'antigravity-fund-manager',
-        market.category,
-        0,
-        dailySpent
-      );
-
       const intent: TradeIntent = {
         marketId: market.id,
         marketQuestion: market.question,
         outcomeSelected: 'NO',
         probabilityImplied: parseFloat(market.outcomePrices[1] || '0.5'),
-        probabilityLLM: 0.00,
+        probabilityLLM: confidence,
         reasoning,
         amountUSD: 0,
         timestamp: Date.now()
@@ -172,9 +118,9 @@ async function main() {
       harness.auditLogger.logAudit(
         intent,
         'HOLD',
-        mandateResult.activeMandate?.signature ? crypto.createHash('sha256').update(mandateResult.activeMandate.signature).digest('hex') : 'none',
+        mandateEvaluation.activeMandate?.signature ? crypto.createHash('sha256').update(mandateEvaluation.activeMandate.signature).digest('hex') : 'none',
         'SIMULATED',
-        'Directed execution placed on HOLD due to database failure.'
+        'Causal graph query error or model exception. Directed execution placed on HOLD.'
       );
 
       logger.warn(`🚫 Evaluation Concluded: SUSPEND TRADE (HOLD) | Market: "${market.question}"`);
