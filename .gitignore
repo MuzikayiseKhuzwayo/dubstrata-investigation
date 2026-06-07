@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Compiled outputs
+dist/
+dist-dashboard/
+
+# Log files
+logs/*
+!logs/.gitkeep
+*.log
+
+# Runtime data (local state, database files)
+data/*
+!data/.gitkeep
+
+# Environment variables & secrets
+.env
+.env.production
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
