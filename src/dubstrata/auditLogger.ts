@@ -61,7 +61,7 @@ export class AuditLogger {
         if (
           entry.intent.timestamp >= todayStart &&
           entry.decision === 'BUY' &&
-          entry.executionStatus === 'SUCCESS'
+          (entry.executionStatus === 'SUCCESS' || entry.executionStatus === 'SIMULATED')
         ) {
           totalSpent += entry.intent.amountUSD;
         }
