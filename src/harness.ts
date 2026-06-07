@@ -6,6 +6,7 @@ import { ClobClient } from './polymarket/clobClient';
 import { logger } from './utils/logger';
 import { TradeIntent } from './dubstrata/types';
 import { CausalLLMManager } from './utils/llmManager';
+import { fetchLiveRSSFeeds, extractTrendsFromRSSItems } from './utils/rssScraper';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -180,25 +181,23 @@ Daily Limit Room:    $${mandateEvaluation.activeMandate ? mandateEvaluation.acti
     }
   }
 
-  /**
-   * Fetches the dynamically tracked Polymarket listings by evaluating news trends (RSS)
-   * via Gemini AI query planning, combined with baseline high-volume active markets.
-   */
   public async fetchTrackedMarkets(): Promise<PolymarketMarket[]> {
-    let contextText = '';
-    const rssPath = './data/rss_feeds.json';
-
-    if (fs.existsSync(rssPath)) {
-      try {
-        const feeds = JSON.parse(fs.readFileSync(rssPath, 'utf-8'));
-        contextText += 'RECENT RESEARCH NEWS AND PROSPECTS:\n' + 
-          feeds.slice(0, 10).map((f: any) => `[${f.type}] ${f.title}: ${f.snippet || f.description}`).join('\n') + '\n\n';
-      } catch (err: any) {
-        logger.error(`Failed to parse RSS feeds in harness: ${err.message}`);
-      }
+    let feeds: any[] = [];
+    try {
+      feeds = await fetchLiveRSSFeeds(false);
+    } catch (err: any) {
+      logger.error(`Failed to scrape live RSS feeds in harness: ${err.message}`);
     }
 
-    let queries = ['fed', 'election', 'openai', 'weather', 'crypto']; // Broader defaults
+    let contextText = '';
+    if (feeds.length > 0) {
+      contextText += 'RECENT RESEARCH NEWS AND PROSPECTS:\n' + 
+        feeds.slice(0, 10).map((f: any) => `[${f.type}] ${f.title}: ${f.snippet || f.description}`).join('\n') + '\n\n';
+    }
+
+    // Determine recent trends dynamically using extractTrendsFromRSSItems as a base/fallback
+    let queries = extractTrendsFromRSSItems(feeds);
+
     if (contextText.trim() && this.llm.hasApiKey()) {
       try {
         const systemInstruction = 'You are an advanced agentic trading bot and prediction market analyst. Your goal is to inspect recent news feeds and generate 3 to 5 highly relevant search queries (1-2 words each, e.g. "fed", "openai", "inflation", "weather", "tariffs") to scan the Polymarket Gamma API for active contracts.';
@@ -219,8 +218,10 @@ Return strictly a JSON array of strings:
           logger.info(`🤖 [HARNESS SCOUT PLANNING] Determined search queries from RSS trends: ${JSON.stringify(queries)}`);
         }
       } catch (err: any) {
-        logger.warn(`Failed to dynamically plan scout queries in harness: ${err.message}. Using defaults.`);
+        logger.warn(`Failed to dynamically plan scout queries in harness: ${err.message}. Using fallback dynamically extracted trends: ${JSON.stringify(queries)}`);
       }
+    } else {
+      logger.info(`🤖 [HARNESS SCOUT PLANNING] Using dynamically extracted trends (no LLM key or empty feeds): ${JSON.stringify(queries)}`);
     }
 
     // Fetch markets for each query in parallel (limit to top 15 results per query)
