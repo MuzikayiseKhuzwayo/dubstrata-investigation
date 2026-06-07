@@ -13,6 +13,8 @@ import { DubstrataMCPClient } from '../dubstrata/client';
 import crypto from 'crypto';
 import { DailyReporter } from '../utils/dailyReporter';
 import { MarkovPolymarketSystem } from '../utils/markovSystem';
+import { TradingAgentHarness } from '../harness';
+import { AutonomousTraderDaemon } from '../utils/autonomousTrader';
 
 function isPendingResponse(response: string | null | undefined): boolean {
   if (!response) return true;
@@ -47,7 +49,9 @@ export function startDashboardServer(
   auditLogger: AuditLogger,
   clobClient: ClobClient,
   gammaClient: GammaClient,
-  dubstrata: DubstrataMCPClient
+  dubstrata: DubstrataMCPClient,
+  harness?: TradingAgentHarness,
+  daemon?: AutonomousTraderDaemon
 ) {
   const app = express();
   const port = process.env.PORT || 3000;
@@ -68,16 +72,40 @@ export function startDashboardServer(
       const portfolio = clobClient.loadPortfolio();
       const audits = auditLogger.readAuditLogs();
       
-      const activeMarkets = await gammaClient.fetchMarkets();
+      // Retrieve the news-derived tracked markets
+      const activeMarkets = harness ? await harness.fetchTrackedMarkets() : await gammaClient.fetchMarkets();
+
+      const daemonStatus = daemon ? daemon.getStatus() : { isRunning: false };
+      const engineStatus = daemonStatus.isRunning ? 'ACTIVE_AUTONOMOUS_DAEMON' : 'ACTIVE_SIMULATED_PAUSED';
 
       res.json({
-        engineStatus: 'ACTIVE_SIMULATED',
+        engineStatus,
         isSimulation: true,
         balances,
         portfolio: portfolio.positions,
         recentAuditsCount: audits.length,
-        activeMarketsCount: activeMarkets.length
+        activeMarketsCount: activeMarkets.length,
+        daemon: daemonStatus
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Toggle background daemon run-state (pause/resume)
+  app.post('/api/daemon/toggle', (req, res) => {
+    try {
+      if (!daemon) {
+        return res.status(400).json({ error: 'Autonomous Daemon not initialized on this server instance.' });
+      }
+      
+      const status = daemon.getStatus();
+      if (status.isRunning) {
+        daemon.stop();
+      } else {
+        daemon.start();
+      }
+      res.json(daemon.getStatus());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -187,37 +215,37 @@ export function startDashboardServer(
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 30;
       
-      // 1. Run AI step to dynamically determine most profitable queries based on prospects
-      const aiQueries = await determinePolymarketScoutQueries();
+      let trackedMarkets: PolymarketMarket[] = [];
+      if (harness) {
+        // Scrape RSS articles dynamically to make sure we plan search queries on the absolute latest trends
+        try {
+          await fetchLiveRSSFeeds();
+        } catch (rssErr: any) {
+          logger.warn(`Failed to scrape RSS in markets endpoint: ${rssErr.message}`);
+        }
+        trackedMarkets = await harness.fetchTrackedMarkets();
+      } else {
+        const aiQueries = await determinePolymarketScoutQueries();
+        const searchPromises = aiQueries.map(q => gammaClient.fetchMarkets(50, q));
+        const resultsArray = await Promise.all(searchPromises);
+        const baselineMarkets = await gammaClient.fetchMarkets(limit);
 
-      // 2. Fetch markets for each query in parallel from Gamma API
-      const searchPromises = aiQueries.map(q => gammaClient.fetchMarkets(50, q));
-      const resultsArray = await Promise.all(searchPromises);
-
-      // Also include general high-volume active markets as baseline safety
-      const baselineMarkets = await gammaClient.fetchMarkets(limit, 'temperature');
-
-      // 3. Merge and deduplicate by ID
-      const allMarketsMap = new Map<string, PolymarketMarket>();
-      
-      // Add baseline first
-      for (const m of baselineMarkets) {
-        allMarketsMap.set(m.id, m);
-      }
-
-      // Add query specific matches
-      for (const list of resultsArray) {
-        for (const m of list) {
+        const allMarketsMap = new Map<string, PolymarketMarket>();
+        for (const m of baselineMarkets) {
           allMarketsMap.set(m.id, m);
         }
+        for (const list of resultsArray) {
+          for (const m of list) {
+            allMarketsMap.set(m.id, m);
+          }
+        }
+        trackedMarkets = Array.from(allMarketsMap.values());
       }
 
-      const mergedList = Array.from(allMarketsMap.values()).filter(isWeatherRelated);
-
       // Sort by volume descending
-      const sortedList = mergedList.sort((a, b) => parseFloat(b.volume || '0') - parseFloat(a.volume || '0'));
+      const sortedList = trackedMarkets.sort((a, b) => parseFloat(b.volume || '0') - parseFloat(a.volume || '0'));
 
-      // Group weather markets by city & date
+      // Group weather markets by city & date, other categories go to non-weather
       const weatherGroups: { [key: string]: any } = {};
       const nonWeatherMarkets: any[] = [];
 
@@ -273,10 +301,10 @@ export function startDashboardServer(
         });
       }
 
-      logger.info(`✨ [Polymarket Scout AI] Grouped weather contracts into ${finalResponseList.length} entities.`);
+      logger.info(`✨ [Polymarket Scout] Loaded ${finalResponseList.length} scouted listings.`);
       res.json(finalResponseList.slice(0, limit));
     } catch (err: any) {
-      logger.error(`❌ Scout AI planning endpoint failed: ${err.message}`);
+      logger.error(`❌ Scout planning endpoint failed: ${err.message}`);
       res.status(500).json({ error: err.message });
     }
   });
@@ -284,24 +312,28 @@ export function startDashboardServer(
   // Scout recommendations ranking top 5 opportunities
   app.get('/api/scout/recommendations', async (req, res) => {
     try {
-      // 1. Get the same deduplicated active markets list (up to 30)
-      const aiQueries = await determinePolymarketScoutQueries();
-      const searchPromises = aiQueries.map(q => gammaClient.fetchMarkets(50, q));
-      const resultsArray = await Promise.all(searchPromises);
-      const baselineMarkets = await gammaClient.fetchMarkets(30, 'temperature');
+      let trackedMarkets: PolymarketMarket[] = [];
+      if (harness) {
+        trackedMarkets = await harness.fetchTrackedMarkets();
+      } else {
+        const aiQueries = await determinePolymarketScoutQueries();
+        const searchPromises = aiQueries.map(q => gammaClient.fetchMarkets(50, q));
+        const resultsArray = await Promise.all(searchPromises);
+        const baselineMarkets = await gammaClient.fetchMarkets(30);
 
-      const allMarketsMap = new Map<string, PolymarketMarket>();
-      for (const m of baselineMarkets) {
-        allMarketsMap.set(m.id, m);
-      }
-      for (const list of resultsArray) {
-        for (const m of list) {
+        const allMarketsMap = new Map<string, PolymarketMarket>();
+        for (const m of baselineMarkets) {
           allMarketsMap.set(m.id, m);
         }
+        for (const list of resultsArray) {
+          for (const m of list) {
+            allMarketsMap.set(m.id, m);
+          }
+        }
+        trackedMarkets = Array.from(allMarketsMap.values());
       }
 
-      const mergedList = Array.from(allMarketsMap.values()).filter(isWeatherRelated);
-      const sortedList = mergedList
+      const sortedList = trackedMarkets
         .sort((a, b) => parseFloat(b.volume || '0') - parseFloat(a.volume || '0'))
         .slice(0, 20); // Use top 20 active markets
 
@@ -1556,12 +1588,18 @@ Return ONLY a JSON response in the following schema:
   // AI step that determines what queries to run for the Polymarket Scout
   async function determinePolymarketScoutQueries(): Promise<string[]> {
     try {
+      // 1. Scrape the latest RSS news feeds first to get absolute JIT context
+      try {
+        await fetchLiveRSSFeeds();
+      } catch (rssErr: any) {
+        logger.warn(`Failed to scrape RSS in query planner: ${rssErr.message}`);
+      }
+
       let contextText = '';
-      
       const rssPath = './data/rss_feeds.json';
       if (fs.existsSync(rssPath)) {
         const feeds = JSON.parse(fs.readFileSync(rssPath, 'utf-8'));
-        contextText += 'RECENT RESEARCH NEWS AND PROSPECTS:\n' + feeds.slice(0, 10).map((f: any) => `[${f.type}] ${f.title}: ${f.description}`).join('\n') + '\n\n';
+        contextText += 'RECENT RESEARCH NEWS AND PROSPECTS:\n' + feeds.slice(0, 10).map((f: any) => `[${f.type}] ${f.title}: ${f.description || f.snippet}`).join('\n') + '\n\n';
       }
 
       const assetsPath = './data/content_assets.json';
@@ -1572,14 +1610,14 @@ Return ONLY a JSON response in the following schema:
       }
 
       if (!contextText.trim()) {
-        logger.info('No local RSS feeds or assets found to feed Polymarket Scout AI Query planner. Using generic weather defaults.');
-        return ['temperature', 'weather', 'degrees', 'rain', 'forecast'];
+        logger.info('No local RSS feeds or assets found to feed Polymarket Scout AI Query planner. Using generic defaults.');
+        return ['fed', 'election', 'openai', 'weather', 'crypto'];
       }
 
-      const systemInstruction = 'You are an advanced agentic trading bot and prediction market analyst. Your goal is to inspect recent news feeds and outreach themes and generate 3 to 5 highly relevant weather-related search queries (focused on temperature, rain, heat, storms, specific city weather, etc.) to scan the Polymarket Gamma API for active weather contracts.';
+      const systemInstruction = 'You are an advanced agentic trading bot and prediction market analyst. Your goal is to inspect recent news feeds and outreach themes and generate 3 to 5 highly relevant search queries (focused on AI, technology developments, central banks, political campaigns, rates, or weather anomalies) to scan the Polymarket Gamma API for active contracts.';
       
       const prompt = `
-Analyze the following tech industry news and active copywriting themes context. Determine a JSON array of 3 to 5 short search queries (1-2 words each, e.g. "weather", "temperature", "Helsinki weather", "London temperature", "heat wave", "rain") that are highly likely to yield active, liquid, and high-volume weather-related prediction markets on Polymarket.
+Analyze the following tech industry news and active copywriting themes context. Determine a JSON array of 3 to 5 short search queries (1-2 words each, e.g. "fed", "openai", "inflation", "weather", "election") that are highly likely to yield active, liquid, and high-volume prediction markets on Polymarket.
 
 --- CURRENT NARRATIVE CONTEXT ---
 ${contextText.slice(0, 3000)}
@@ -1596,9 +1634,9 @@ Return strictly a JSON array of strings, e.g.:
         return queries.map(q => String(q).trim()).filter(Boolean);
       }
     } catch (err: any) {
-      logger.warn(`⚠️ Polymarket Scout AI query planning failed: ${err.message}. Using default weather trading categories.`);
+      logger.warn(`⚠️ Polymarket Scout AI query planning failed: ${err.message}. Using default trading categories.`);
     }
-    return ['temperature', 'weather', 'degrees', 'rain', 'forecast'];
+    return ['fed', 'election', 'openai', 'weather', 'crypto'];
   }
 
   // Heuristic parsing fallback if AI Planner is offline

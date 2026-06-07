@@ -7,6 +7,8 @@ import { logger } from './utils/logger';
 import { TradeIntent } from './dubstrata/types';
 import { CausalLLMManager } from './utils/llmManager';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 export class TradingAgentHarness {
   public dubstrata: DubstrataMCPClient;
@@ -176,6 +178,73 @@ Daily Limit Room:    $${mandateEvaluation.activeMandate ? mandateEvaluation.acti
     } catch {
       return raw;
     }
+  }
+
+  /**
+   * Fetches the dynamically tracked Polymarket listings by evaluating news trends (RSS)
+   * via Gemini AI query planning, combined with baseline high-volume active markets.
+   */
+  public async fetchTrackedMarkets(): Promise<PolymarketMarket[]> {
+    let contextText = '';
+    const rssPath = './data/rss_feeds.json';
+
+    if (fs.existsSync(rssPath)) {
+      try {
+        const feeds = JSON.parse(fs.readFileSync(rssPath, 'utf-8'));
+        contextText += 'RECENT RESEARCH NEWS AND PROSPECTS:\n' + 
+          feeds.slice(0, 10).map((f: any) => `[${f.type}] ${f.title}: ${f.snippet || f.description}`).join('\n') + '\n\n';
+      } catch (err: any) {
+        logger.error(`Failed to parse RSS feeds in harness: ${err.message}`);
+      }
+    }
+
+    let queries = ['fed', 'election', 'openai', 'weather', 'crypto']; // Broader defaults
+    if (contextText.trim() && this.llm.hasApiKey()) {
+      try {
+        const systemInstruction = 'You are an advanced agentic trading bot and prediction market analyst. Your goal is to inspect recent news feeds and generate 3 to 5 highly relevant search queries (1-2 words each, e.g. "fed", "openai", "inflation", "weather", "tariffs") to scan the Polymarket Gamma API for active contracts.';
+        const prompt = `
+Analyze the following tech industry news. Determine a JSON array of 3 to 5 short search queries (1-2 words each) that are highly likely to yield active, liquid, and high-volume prediction markets on Polymarket.
+
+--- CURRENT NARRATIVE CONTEXT ---
+${contextText.slice(0, 3000)}
+---------------------------------
+
+Return strictly a JSON array of strings:
+["keyword1", "keyword2", "keyword3"]
+`;
+        const responseText = await this.llm.queryModel(prompt, systemInstruction, true);
+        const parsed = JSON.parse(responseText);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          queries = parsed.map(q => String(q).trim()).filter(Boolean);
+          logger.info(`🤖 [HARNESS SCOUT PLANNING] Determined search queries from RSS trends: ${JSON.stringify(queries)}`);
+        }
+      } catch (err: any) {
+        logger.warn(`Failed to dynamically plan scout queries in harness: ${err.message}. Using defaults.`);
+      }
+    }
+
+    // Fetch markets for each query in parallel (limit to top 15 results per query)
+    const searchPromises = queries.map(q => this.gamma.fetchMarkets(15, q));
+    const resultsArray = await Promise.all(searchPromises);
+    
+    // Fetch top 30 baseline active markets (overall high-volume Polymarket listings)
+    const baselineMarkets = await this.gamma.fetchMarkets(30);
+
+    const allMarketsMap = new Map<string, PolymarketMarket>();
+    
+    // Load baseline first
+    for (const m of baselineMarkets) {
+      allMarketsMap.set(m.id, m);
+    }
+    
+    // Add query matches
+    for (const list of resultsArray) {
+      for (const m of list) {
+        allMarketsMap.set(m.id, m);
+      }
+    }
+
+    return Array.from(allMarketsMap.values());
   }
 
   /**

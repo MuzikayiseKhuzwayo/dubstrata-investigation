@@ -5,6 +5,7 @@ dotenv.config();
 import { TradingAgentHarness } from './harness';
 import { startDashboardServer } from './dashboard/server';
 import { logger } from './utils/logger';
+import { AutonomousTraderDaemon } from './utils/autonomousTrader';
 
 async function main() {
   logger.info('================================================================');
@@ -23,14 +24,20 @@ async function main() {
     logger.warn('Research tools will return mock graph outputs. To activate live graph lookup, configure DUBSTRATA_API_KEY.');
   }
 
-  // 2. Start premium dashboard visualizer
+  // 2. Start the background Autonomous Trading Daemon to systematically monitor markets
+  const daemon = new AutonomousTraderDaemon(harness);
+  daemon.start();
+
+  // 3. Start premium dashboard visualizer
   logger.info('Spawning companion visualizer server...');
   startDashboardServer(
     harness.verifier,
     harness.auditLogger,
     harness.clob,
     harness.gamma,
-    harness.dubstrata
+    harness.dubstrata,
+    harness,
+    daemon
   );
 
   logger.info('================================================================');
@@ -41,6 +48,7 @@ async function main() {
   // Graceful shutdown handling
   process.on('SIGINT', async () => {
     logger.info('Shutting down engine gracefully...');
+    daemon.stop();
     await harness.shutdown();
     process.exit(0);
   });

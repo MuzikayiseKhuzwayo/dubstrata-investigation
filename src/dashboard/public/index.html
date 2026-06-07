@@ -37,9 +37,14 @@
         <span class="logo-icon">⚡</span>
         <h1>Dubstrata<span>Investigator</span></h1>
       </div>
-      <div class="engine-badge simulated" id="engine-status-badge">
-        <span class="pulse-dot"></span>
-        <span id="engine-status-text">BOOTING ENGINE...</span>
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <div class="engine-badge simulated" id="engine-status-badge">
+          <span class="pulse-dot"></span>
+          <span id="engine-status-text">BOOTING ENGINE...</span>
+        </div>
+        <button id="toggle-daemon-btn" class="action-btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; cursor: pointer; display: none; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-primary); transition: all 0.2s;">
+          ⏸️ Pause Daemon
+        </button>
       </div>
     </div>
   </header>

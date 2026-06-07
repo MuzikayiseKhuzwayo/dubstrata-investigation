@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // DOM rendering targets
   const engineStatusText = document.getElementById('engine-status-text');
   const engineStatusBadge = document.getElementById('engine-status-badge');
+  const toggleDaemonBtn = document.getElementById('toggle-daemon-btn');
   const metricSimBalance = document.getElementById('metric-sim-balance');
   const metricPositionsCount = document.getElementById('metric-positions-count');
   const metricPositionsValue = document.getElementById('metric-positions-value');
@@ -123,10 +124,22 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Update top banner
       engineStatusText.textContent = data.engineStatus;
-      if (data.isSimulation) {
-        engineStatusBadge.className = 'engine-badge simulated';
+      if (data.daemon) {
+        toggleDaemonBtn.style.display = 'block';
+        if (data.daemon.isRunning) {
+          toggleDaemonBtn.textContent = '⏸️ Pause Daemon';
+          engineStatusBadge.className = 'engine-badge simulated'; // green
+        } else {
+          toggleDaemonBtn.textContent = '▶️ Resume Daemon';
+          engineStatusBadge.className = 'engine-badge'; // default neon indigo
+        }
       } else {
-        engineStatusBadge.className = 'engine-badge live';
+        toggleDaemonBtn.style.display = 'none';
+        if (data.isSimulation) {
+          engineStatusBadge.className = 'engine-badge simulated';
+        } else {
+          engineStatusBadge.className = 'engine-badge live';
+        }
       }
 
       // Update basic cards
@@ -751,6 +764,19 @@ document.addEventListener('DOMContentLoaded', () => {
     await updateMcp();
     await updateProjections();
   }
+
+  // Toggle background daemon run-state (pause/resume)
+  toggleDaemonBtn.addEventListener('click', async () => {
+    try {
+      toggleDaemonBtn.disabled = true;
+      await fetchJSON('/api/daemon/toggle', { method: 'POST' });
+      await updateStatus();
+    } catch (err) {
+      loggerDebug(`Error toggling daemon: ${err.message}`);
+    } finally {
+      toggleDaemonBtn.disabled = false;
+    }
+  });
 
   // Refresh & settle trades handler
   refreshPortfolioBtn.addEventListener('click', async () => {
