@@ -16,12 +16,30 @@ export class DubstrataMCPClient {
     // Lazy initialisation
   }
 
+
+
+  public getIsConnected(): boolean {
+    return this.isConnected;
+  }
+
   public async connect(): Promise<boolean> {
-    const apiKey = process.env.DUBSTRATA_API_KEY;
+    let apiKey = process.env.DUBSTRATA_API_KEY;
+    const configPath = './data/mcp_config.json';
+    if (fs.existsSync(configPath)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (config.apiKey) {
+          apiKey = config.apiKey;
+        }
+      } catch (err: any) {
+        logger.warn(`Failed to read mcp_config.json: ${err.message}`);
+      }
+    }
+
     const commandStr = process.env.DUBSTRATA_MCP_SERVER_COMMAND || 'npx dubstrata-mcp';
 
     if (!apiKey) {
-      logger.warn('⚠️ DUBSTRATA_API_KEY environment variable is not defined.');
+      logger.warn('⚠️ DUBSTRATA_API_KEY is not defined in environment or mcp_config.json.');
       logger.warn('The harness will run Dubstrata research tools in Simulation/Local Mock mode.');
       return false;
     }
@@ -96,10 +114,13 @@ export class DubstrataMCPClient {
       if (this.transport) {
         await this.transport.close();
       }
-      this.isConnected = false;
-      logger.info('Disconnected from Dubstrata MCP server.');
     } catch (err: any) {
-      logger.error(`Error during disconnect: ${err.message}`);
+      logger.error(`Error closing transport during disconnect: ${err.message}`);
+    } finally {
+      this.transport = null;
+      this.client = null;
+      this.isConnected = false;
+      logger.info('🔌 [DUBSTRATA MCP] Disconnected from Dubstrata MCP server.');
     }
   }
 

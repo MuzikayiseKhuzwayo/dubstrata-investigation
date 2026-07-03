@@ -1,80 +1,75 @@
-# ⚡ Dubstrata MCP & Polymarket Trading Agent Harness
+# ⚡ Strata Geopolitical Situation Monitor & Business Agent Hub
 
-Welcome to the **Dubstrata Causal Investment Harness**, a high-fidelity research and execution playground that evaluates the absolute analytical power of the **Dubstrata MCP** causal graph-RAG framework. 
+Welcome to **Strata**, an advanced, open-source workstation that integrates live geopolitical and macroeconomic signal monitoring, real-time risk reasoning via causal graph RAG engines, and an autonomous multi-agent operational debate hub.
 
-This repository acts as a highly compliant, non-repudiable paper-trading fund manager. It scouts prediction markets on Polymarket, executes programmatic causal analysis using Dubstrata's deep knowledge graph tools, validates positions against cryptographically signed digital mandates, chains audit trails with immutable hashes, and streams everything in real-time to a premium dark-themed glassmorphism visual dashboard.
+The system continuously screens international news, maps risk cascades, launches collaborative subagent debates to formulate strategic counter-measures, validates compliance against local operational directives, and streams everything in real-time to a dark-themed glassmorphism visual dashboard.
 
 ---
 
-## 🏗️ Core Architecture & Causal Engine
+## 🏗️ Core Architecture & Flow
 
-The harness enforces a rigid, strict architectural separation of concerns. Instead of delegating random execution to black-box LLMs, **Dubstrata MCP acts as our absolute, single source of causal truth.**
+Strata is designed for highly coordinated, compliance-guided risk mitigation. Instead of running disjointed or unconstrained LLMs, it aligns multiple specialist agents under a central Orchestrator that reads local SOP files, uses sandbox disk storage as a workspace, and respects Operator boundaries.
 
 ```
-                     ┌──────────────────────────┐
-                     │  Polymarket active Scout │
-                     └─────────────┬────────────┘
-                                   │
-                                   ▼
-                     ┌──────────────────────────┐
-                     │   Dubstrata Graph RAG    │ <─── [ONLY Source of Causal Truth]
-                     └─────────────┬────────────┘
-                                   │
-                                   ▼
-                     ┌──────────────────────────┐
-                     │ Fund Manager Decision    │
-                     └─────────────┬────────────┘
-                                   │
-                                   ▼
-                     ┌──────────────────────────┐
-                     │ EIP-712 Mandate Check    │
-                     └─────────────┬────────────┘
-                                   │
-                     ┌─────────────┴────────────┐
-             [Passed]│                  [Failed]│
-                     ▼                          ▼
-       ┌────────────────────────┐    ┌────────────────────────┐
-       │ Immutable Audit Chain  │    │ Mandate Block logged   │
-       │    (SHA-256 Ledger)    │    │   (Chained Block)      │
-       └───────────┬────────────┘    └────────────────────────┘
-                   │
-                   ▼
-       ┌────────────────────────┐
-       │ CLOB simulated Order   │
-       │ (10,000 pUSD virtual)  │
-       └────────────────────────┘
+                          ┌──────────────────────────┐
+                          │   Live RSS News Feeds    │
+                          └─────────────┬────────────┘
+                                        │
+                                        ▼
+                          ┌──────────────────────────┐
+                          │  Background Risk Daemon  │ <─── [Screens Macro/Geopolitical Threats]
+                          └─────────────┬────────────┘
+                                        │ (Critical Anomaly)
+                                        ▼
+                          ┌──────────────────────────┐
+                          │    Agent Hub Session     │ <─── [Autonomously Spawns Debate]
+                          └─────────────┬────────────┘
+                                        │
+                                        ▼
+                          ┌──────────────────────────┐
+                          │  Server Autopilot Loop   │ <─── [Sequentially Orchestrates Turns]
+                          └─────┬──────────────┬─────┘
+                                │              │
+                                ▼              ▼
+                    ┌──────────────────────┐ ┌──────────────────────┐
+                    │   Subagent SOPs      │ │  Compliance Checks   │
+                    │ (Visionary, Seller,  │ │  (EIP-712 / Solana  │
+                    │ Producer, etc.)      │ │   Signature Audits)  │
+                    └──────────────────────┘ └──────────────────────┘
 ```
 
 ---
 
-## 🌟 Premium Features
+## 🌟 Key Platform Modules
 
-### 1. Causal Graph Investigation (`src/dubstrata/client.ts`)
-Connects via STDIO proxy to the published `@dubstrata/mcp-server@1.0.1` package on NPM.
-* **Deep Telemetry Logging**: Records every single interaction (exact JSON query parameters, response bodies, token sizes, compression ratios, and latencies) directly to `./data/mcp_interactions.jsonl` and formatted console logs.
-* **JIT Pending Resilience**: Automatically checks if the cloud proxy returns `DATA PENDING` (due to live web-crawling/scraping loops), logging a countdown and retrying up to 4 times with a 5-second sleep to ensure we never make decisions on empty context.
+### 1. Geopolitical Risk Ingestion Daemon (`src/utils/contentDaemon.ts`)
+Runs in the background, systematically polling production XML streams (Macroeconomics, Finance, Energy, Politics).
+* **Economic Risk Filter**: Screens incoming items for risk indicators (e.g. *recession, collapse, inflation, sanctions, default, liquidity, contagion*).
+* **Autonomous Debates**: On capturing a critical threat, it initializes a new Agent Hub session, posts a detailed System Alert, and launches a background debate to outline strategic countermeasures.
 
-### 2. Soonest-Closing Market Prioritization (`src/polymarket/gammaClient.ts`)
-Fetches unresolved active markets directly from the **Polymarket Gamma API**, requesting and sorting them locally in ascending order of `endDate` (closest first). This enables rapid validation of our agent's causal predictions as markets resolve quickly.
+### 2. Multi-Agent Collaboration Room (`src/utils/agentChatManager.ts`)
+Coordinates 5 core business subagents executing local Standard Operating Procedures (SOPs):
+* **Visionary (SOP-STR-001)**: Formulates strategic priorities, SVAR impact loops, and market decoupling paths.
+* **Producer (SOP-OPS-004)**: Checks sprint backlogs, engineering WIP limits, and pipeline metrics.
+* **Seller (SOP-SLS-001)**: Coordinates quantitative account lead acquisition, billing setups, and MEDDPICC checks.
+* **Controller (SOP-FIN-001)**: Audits financial ledger receipts, tables, and validates Solana x402 compliance signatures.
+* **Systematiser (SOP-OPS-001)**: Eliminates operational friction, maps ingestion cycles, and designs graph RAG loops.
 
-### 3. EIP-712 Compliance Mandate Verifier (`src/dubstrata/mandateVerifier.ts`)
-Before any position is proposed, the harness recovers and validates typed EIP-712 compliance mandates cryptographically signed by the principal's private key. The verifier ensures limits like `maxPositionSize`, `dailyLimit`, and `allowedCategories` (e.g., Finance, Politics, General) are strictly honored.
+### 3. Server-Driven Autopilot Loop
+Runs a background orchestration loop on the server. When Autopilot is enabled:
+* Subagents debate sequentially, pausing 3 seconds between responses for natural pacing.
+* The loop runs autonomously, writing logs and sandbox files to disk, until the Orchestrator yields control to the Operator (`User` turn).
+* The Autopilot state persists globally across conversation tabs.
 
-### 4. Non-Repudiable Cryptographic Ledger (`src/dubstrata/auditLogger.ts`)
-Every compliance check, trade decision, and outcome is saved in an append-only JSONL audit ledger (`./data/audit_logs.jsonl`). Each ledger block is mathematically chained to the previous block using SHA-256 hashes, creating a fully audit-verifiable record.
-* **Structured Causal Reasonings**: Every audit block includes beautiful HTML reasoning segments detailing:
-  1. **📊 Causal Information Analysis**: Decoding Dubstrata's graph-RAG evidence.
-  2. **💡 Meaning & Odds Implications**: What this means for contract pricing.
-  3. **🎯 Tactical Trading Decision**: The logical action for executing the position.
+### 4. Real-Time Glassmorphic SSE Dashboard
+A dark glassmorphism layout with neon glowing backdrops and static sidebar navigation:
+* 🤖 **Agent Hub (Chat)**: View active debates, input Operator queries, summon specific agents, toggle Autopilot, and inspect files written by agents to the sandbox workspace.
+* 📡 **Signal Center**: View live RSS signals with expandable full-text article cards and manual risk investigation triggers.
+* ⚙️ **Agent Management**: View and modify core agent prompts, roles, and hyper-directives in real-time.
+* 💼 **Business Context**: Sync local markdown business rule files to keep the subagents aligned with your organizational strategy.
 
-### 5. High-Aesthetic Glassmorphism Dashboard (`src/dashboard/`)
-Built with modern dark space variables, radial glowing orbs, blurred backdrops, and neon indigo accenting. Exposes six beautiful real-time tabs:
-- 📊 **Portfolio Overview**: Displays active open positions, entry costs, and virtual returns.
-- 🔍 **Polymarket Scout**: Lists live, soonest-closing contracts.
-- 📜 **Dubstrata Mandates**: Shows cryptographic digital mandates and EIP-712 compliance statuses.
-- 🔒 **Audit Trail Chain**: Connects all compliance blocks, displaying their SHA-256 hashes and structured HTML reasoning boxes.
-- ⚡ **Backtesting Engine**: Simulates late-2024 historical markets, running causal evaluations to test ROI and win rates.
-- 🔌 **MCP Telemetry**: Interactive JSON browser showing full queries, token usage, latencies, and responses.
+### 5. Interactive Alert Modals
+Real-time browser notifications. When the background Daemon detects a high-risk event, a modal overlay triggers immediately showing the warning details and provides a direct shortcut to **"Go to Hub Debate"** to inspect the live strategic planning.
 
 ---
 
@@ -82,32 +77,25 @@ Built with modern dark space variables, radial glowing orbs, blurred backdrops, 
 
 ### 📦 Installation
 Verify you have Node.js (v18+) and install dependencies:
-```powershell
+```bash
 npm install
 ```
 
 ### ⚙️ Configuration
 Create your environment file:
-```powershell
+```bash
 copy .env.example .env
 ```
-Populate `.env` with your keys:
-- `DUBSTRATA_API_KEY`: Your live tenant key to connect to production cloud `https://api.dubstrata.com`.
-- `SIMULATION_MODE`: `true` (runs virtual pUSD portfolio to eliminate risk).
+Populate `.env` with your API keys:
+* `DUBSTRATA_API_KEY`: Your key to authenticate against cloud knowledge graphs.
+* `SIMULATION_MODE`: Defaults to `true` (runs virtual portfolio to mitigate risk).
 
-### 🏃 Running the Harness & Dashboard
-Start the concurrently grouped Express visualizer and agent loop:
-```powershell
+### 🏃 Running the Application
+Start the concurrently grouped Express backend server, Vite build tracker, and background Daemon:
+```bash
 npm start
 ```
-Open your browser to **`http://localhost:3000`** to view the stunning dashboard!
-
-### 📊 Running Dry-Run Investigations
-To run a standalone causal research and compliance verification trace on the Fed September 2026 meeting contract:
-```powershell
-npm run research-trade
-```
-This script will output the full telemetry of the MCP calls, estimated token counts, and chain a mathematical audit receipt on your screen!
+Open your browser to **`http://localhost:3000`** to view the dashboard!
 
 ---
 
@@ -115,25 +103,24 @@ This script will output the full telemetry of the MCP calls, estimated token cou
 
 ```
 ├── data/
-│   ├── audit_logs.jsonl          # SHA-256 mathematically chained audit block ledger
-│   ├── mcp_interactions.jsonl    # Comprehensive MCP query, response, and token logs
-│   ├── portfolio.json            # Virtual bookkeeper storage
-│   └── backtest_runs.json        # Archival log of historical strategy runs
+│   ├── agent_chats.json          # Persistent Agent Hub chat histories
+│   ├── rss_feeds.json            # Parsed RSS feed cache
+│   └── agents/                   # Sandbox workspace directory
+│       ├── brain_map.json        # Asset registry tracking files created by agents
+│       └── [RoleName]/           # Isolated folder workspaces for individual agents
 ├── src/
-│   ├── dubstrata/
-│   │   ├── client.ts             # Dubstrata MCP proxy stdio client with retries
-│   │   ├── auditLogger.ts        # Cryptographic SHA-256 block chain verifier
-│   │   ├── mandateVerifier.ts    # EIP-712 typed signature verifier
-│   │   └── types.ts              # System TS types
-│   ├── polymarket/
-│   │   ├── gammaClient.ts        # Live soonest-closing scouter
-│   │   └── clobClient.ts         # Simulated portfolio manager
-│   ├── backtest/
-│   │   └── runner.ts             # Late-2024 historical simulator
-│   ├── dashboard/
-│   │   ├── server.ts             # Express API provider
-│   │   └── public/               # Premium HTML/CSS/JS frontend visualizer
-│   ├── index.ts                  # App main launch loop
-│   └── harness.ts                # Main orchestrator linking scout, graph, and execution
-└── tsconfig.json                 # TypeScript strict compiler config
+│   ├── index.ts                  # App bootloader starting background loops & Express
+│   ├── harness.ts                # Main integration orchestrator
+│   ├── utils/
+│   │   ├── contentDaemon.ts      # Geopolitical Ingestion Daemon class
+│   │   ├── agentChatManager.ts   # Chat session controller & Autopilot loop
+│   │   └── eventBroker.ts        # Node EventBroker dispatching SSE frames
+│   └── dashboard/
+│       ├── server.ts             # Express REST server & SSE stream endpoint
+│       └── frontend/             # React SPA (Vite + Tailwind + Lucide Icons)
 ```
+
+---
+
+## 📄 Open Source License
+Distributed under the permissive **MIT License**. Check out [LICENSE](file:///c:/Users/muzik/Documents/GitHub/dubstrata-investigation/LICENSE) for details.

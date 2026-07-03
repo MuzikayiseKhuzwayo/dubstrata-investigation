@@ -55,6 +55,8 @@ export class CausalLLMManager {
           };
         }
 
+        logger.info(`🤖 [LLM] Outgoing request to Gemini API (${this.model}). Prompt size: ${prompt.length} chars.`);
+        const startTime = Date.now();
         const response = await axios.post(url, payload, {
           headers: { 'Content-Type': 'application/json' },
           timeout: 30000
@@ -62,6 +64,7 @@ export class CausalLLMManager {
 
         const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
+          logger.info(`✅ [LLM] Gemini API response received in ${Date.now() - startTime}ms. Response size: ${text.length} chars.`);
           return text.trim();
         }
         throw new Error('No candidate content text returned from Gemini API response.');

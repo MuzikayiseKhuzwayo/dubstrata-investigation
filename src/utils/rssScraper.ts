@@ -11,6 +11,7 @@ export interface RSSItem {
   type: 'MONEY' | 'PEOPLE' | 'GENERAL';
   time: string;
   snippet: string;
+  summary?: string;
 }
 
 const RSS_FEEDS_PATH = './data/rss_feeds.json';
@@ -81,13 +82,19 @@ export async function fetchLiveRSSFeeds(forceRefresh = false): Promise<RSSItem[]
           let title = titleMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
           title = title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#8217;/g, "'").replace(/&#8211;/g, "-");
           
-          let snippet = descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
-          snippet = snippet.replace(/<[^>]*>?/gm, '').substring(0, 220).trim();
-          snippet = snippet.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#8217;/g, "'").replace(/&#8211;/g, "-");
+          let rawDesc = descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
+          let cleanedDesc = rawDesc.replace(/<[^>]*>?/gm, '').trim();
+          cleanedDesc = cleanedDesc.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#8217;/g, "'").replace(/&#8211;/g, "-");
+
+          const summary = cleanedDesc.substring(0, 1000).trim();
+          let snippet = cleanedDesc.substring(0, 150).trim();
+          if (cleanedDesc.length > 150) {
+            snippet += '...';
+          }
 
           const pubDate = dateMatch ? dateMatch[1] : 'Recent';
           
-          const textLower = (title + ' ' + snippet).toLowerCase();
+          const textLower = (title + ' ' + cleanedDesc).toLowerCase();
           let type: 'MONEY' | 'PEOPLE' | 'GENERAL' = 'GENERAL';
           
           if (textLower.includes('hire') || textLower.includes('appoint') || textLower.includes('join') || textLower.includes('cto') || textLower.includes('lead') || textLower.includes('vp') || textLower.includes('architect') || textLower.includes('director') || textLower.includes('ceo') || textLower.includes('founder') || textLower.includes('executive')) {
@@ -105,7 +112,8 @@ export async function fetchLiveRSSFeeds(forceRefresh = false): Promise<RSSItem[]
             source: feed.source,
             type,
             time: formatPubDate(pubDate),
-            snippet: snippet || 'Click Investigate in Lab to pull causal context.'
+            snippet: snippet || 'Click Investigate in Lab to pull causal context.',
+            summary: summary || snippet
           });
         }
       }

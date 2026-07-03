@@ -1,564 +1,279 @@
 import { DubstrataMCPClient } from './dubstrata/client';
-import { MandateVerifier } from './dubstrata/mandateVerifier';
 import { AuditLogger } from './dubstrata/auditLogger';
-import { GammaClient, PolymarketMarket } from './polymarket/gammaClient';
-import { ClobClient } from './polymarket/clobClient';
+import { ContentComplianceVerifier } from './content/complianceVerifier';
+import { ContentEvaluator, ContentAsset } from './content/evaluator';
+import { CURRENT_STRATEGY } from './content/strategy';
 import { logger } from './utils/logger';
-import { TradeIntent } from './dubstrata/types';
 import { CausalLLMManager } from './utils/llmManager';
-import { fetchLiveRSSFeeds, extractTrendsFromRSSItems } from './utils/rssScraper';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
 export class TradingAgentHarness {
   public dubstrata: DubstrataMCPClient;
-  public verifier: MandateVerifier;
   public auditLogger: AuditLogger;
-  public gamma: GammaClient;
-  public clob: ClobClient;
   public llm: CausalLLMManager;
   private isConnected = false;
+  private assetsPath = './data/content_assets.json';
 
   constructor() {
     this.dubstrata = new DubstrataMCPClient();
-    this.verifier = new MandateVerifier();
     this.auditLogger = new AuditLogger();
-    this.gamma = new GammaClient();
-    this.clob = new ClobClient(
-      './data/portfolio.json',
-      process.env.SIMULATION_MODE !== 'false'
-    );
     this.llm = new CausalLLMManager();
   }
 
   public async initialize(): Promise<boolean> {
-    logger.info('Initializing Dubstrata-MCP Trading Agent Harness...');
+    logger.info('Initializing Dubstrata-MCP Causal Content Engine Harness...');
     this.isConnected = await this.dubstrata.connect();
     return this.isConnected;
   }
 
   public async shutdown() {
-    logger.info('Shutting down trading harness...');
+    logger.info('Shutting down content engine harness...');
     await this.dubstrata.disconnect();
   }
 
-  // Prepares a deep causal research investment memo using the graph tools!
-  public async researchMarket(questionQuery: string): Promise<{
-    market: PolymarketMarket;
-    graphContext: string;
-    conflicts: string;
-    facts: string;
-    mandateEvaluation: { allowed: boolean; reason?: string };
-    memo: string;
-  }> {
-    // 1. Scout Polymarket
-    const activeMarkets = await this.gamma.fetchMarkets();
-    
-    // Find matching market or fallback to simulated/new
-    let market = activeMarkets.find(m => 
-      m.question.toLowerCase().includes(questionQuery.toLowerCase()) || 
-      m.slug.toLowerCase().includes(questionQuery.toLowerCase())
-    );
-
-    if (!market) {
-      logger.warn(`No active Polymarket listing found matching: "${questionQuery}". Synthesizing scouting record...`);
-      market = {
-        id: 'scouted-' + questionQuery.replace(/\s+/g, '-').toLowerCase().slice(0, 30),
-        question: questionQuery,
-        slug: questionQuery.replace(/\s+/g, '-').toLowerCase().slice(0, 30),
-        category: 'Research',
-        outcomes: ['YES', 'NO'],
-        outcomePrices: ['0.50', '0.50'],
-        volume: '100000',
-        liquidity: '5000',
-        resolved: false,
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      };
-    }
-
-    logger.info(`🔍 Scouting data retrieved: "${market.question}" | Implied Probability: ${Math.round(parseFloat(market.outcomePrices[0]) * 100)}% YES`);
-
-    // 2. Query the Dubstrata Causal Graph using surgical tools
-    logger.info(`🧠 Inquiring Dubstrata Graph RAG for causal contexts...`);
-    const graphContextRaw = await this.dubstrata.queryGraph(market.question);
-    
-    // Extract primary entity names from the question for factual surgical retrieval
-    const cleanQ = market.question.replace(/^(will|is|can|does|should|would|could|whether|what|who|which|the|highest|lowest|temperature|in|be|on|after|before)\s+/i, '');
-    const cleanWords = cleanQ.split(/\s+/);
-    const entityParts: string[] = [];
-    
-    for (const w of cleanWords) {
-      const clean = w.replace(/[^a-zA-Z]/g, '');
-      if (clean.length > 0 && clean[0] === clean[0].toUpperCase()) {
-        entityParts.push(clean);
-      } else if (entityParts.length > 0) {
-        break;
-      }
-    }
-    const mainEntity = entityParts.length > 0 ? entityParts.join(' ') : 'Market Subject';
-
-    logger.info(`🧠 Retrieving factual claims about entity: "${mainEntity}"...`);
-    const factsRaw = await this.dubstrata.getAllFacts(mainEntity);
-
-    logger.info(`🧠 Scanning for contrarian conflicts or source contradictions...`);
-    const conflictsRaw = await this.dubstrata.findConflicts(mainEntity);
-
-    // Parse domain from resolution source if present to assess credibility
-    let domainTrustReport = 'No domain checks performed.';
-    if (market.resolutionSource) {
-      try {
-        const url = new URL(market.resolutionSource);
-        logger.info(`🧠 Evaluating historical credibility of source domain: "${url.hostname}"...`);
-        domainTrustReport = await this.dubstrata.checkSourceTrust(url.hostname);
-      } catch {
-        // Ignored
-      }
-    }
-
-    // 3. Evaluate Compliance Mandates
-    const dailySpent = this.auditLogger.getDailySpentUSD('antigravity-fund-manager');
-    const mandateEvaluation = this.verifier.evaluateTrade(
-      'antigravity-fund-manager',
-      market.category,
-      250, // standard check size
-      dailySpent
-    );
-
-    // 4. Construct beautiful Investment Memo
-    const memo = `
-================================================================================
-                    DUBSTRATA AGENTIC CAUSAL INVESTMENT MEMO                    
-================================================================================
-[MARKET SCOUT]
-Question:     ${market.question}
-Category:     ${market.category}
-Implied Odds: YES: ${Math.round(parseFloat(market.outcomePrices[0]) * 100)}% | NO: ${Math.round(parseFloat(market.outcomePrices[1]) * 100)}%
-Volume:       $${parseFloat(market.volume).toLocaleString()}
-Expires:      ${new Date(market.endDate).toLocaleString()}
-
-[DUBSTRATA CAUSAL CONTEXTS (Graph RAG)]
-${this.formatJSONString(graphContextRaw)}
-
-[ENTITY FACT SHEETS: ${mainEntity}]
-${this.formatJSONString(factsRaw)}
-
-[CONTRARIAN CONFLICT SCAN]
-${this.formatJSONString(conflictsRaw)}
-
-[SOURCE CREDIBILITY AUDIT]
-Resolution Domain: ${market.resolutionSource || 'Self-referential / General'}
-Trust Assessment:
-${this.formatJSONString(domainTrustReport)}
-
-[REGULATORY COMPLIANCE MANDATE]
-Evaluation Address:  ${mandateEvaluation.activeMandate?.signerAddress || 'unloaded'}
-EIP-712 Compliance:  ${mandateEvaluation.allowed ? '✅ SECURE - APPROVED' : '🚫 BLOCKED'}
-Friction Details:    ${mandateEvaluation.reason || 'None. Fully within trading parameters.'}
-Daily Limit Room:    $${mandateEvaluation.activeMandate ? mandateEvaluation.activeMandate.dailyLimit - dailySpent : 0} of $${mandateEvaluation.activeMandate?.dailyLimit || 0} remaining
-================================================================================
-`;
-
-    return {
-      market,
-      graphContext: graphContextRaw,
-      conflicts: conflictsRaw,
-      facts: factsRaw,
-      mandateEvaluation: {
-        allowed: mandateEvaluation.allowed,
-        reason: mandateEvaluation.reason
-      },
-      memo
-    };
-  }
-
-  private formatJSONString(raw: string): string {
+  /**
+   * Helper to load all stored content assets
+   */
+  private loadAssets(): ContentAsset[] {
     try {
-      const parsed = JSON.parse(raw);
-      return JSON.stringify(parsed, null, 2);
+      if (!fs.existsSync(this.assetsPath)) {
+        return [];
+      }
+      return JSON.parse(fs.readFileSync(this.assetsPath, 'utf-8'));
     } catch {
-      return raw;
+      return [];
     }
-  }
-
-  public async fetchTrackedMarkets(): Promise<PolymarketMarket[]> {
-    let feeds: any[] = [];
-    try {
-      feeds = await fetchLiveRSSFeeds(false);
-    } catch (err: any) {
-      logger.error(`Failed to scrape live RSS feeds in harness: ${err.message}`);
-    }
-
-    let contextText = '';
-    if (feeds.length > 0) {
-      contextText += 'RECENT RESEARCH NEWS AND PROSPECTS:\n' + 
-        feeds.slice(0, 10).map((f: any) => `[${f.type}] ${f.title}: ${f.snippet || f.description}`).join('\n') + '\n\n';
-    }
-
-    // Determine recent trends dynamically using extractTrendsFromRSSItems as a base/fallback
-    let queries = extractTrendsFromRSSItems(feeds);
-
-    if (contextText.trim() && this.llm.hasApiKey()) {
-      try {
-        const systemInstruction = 'You are an advanced agentic trading bot and prediction market analyst. Your goal is to inspect recent news feeds and generate 3 to 5 highly relevant search queries (1-2 words each, e.g. "fed", "openai", "inflation", "weather", "tariffs") to scan the Polymarket Gamma API for active contracts.';
-        const prompt = `
-Analyze the following tech industry news. Determine a JSON array of 3 to 5 short search queries (1-2 words each) that are highly likely to yield active, liquid, and high-volume prediction markets on Polymarket.
-
---- CURRENT NARRATIVE CONTEXT ---
-${contextText.slice(0, 3000)}
----------------------------------
-
-Return strictly a JSON array of strings:
-["keyword1", "keyword2", "keyword3"]
-`;
-        const responseText = await this.llm.queryModel(prompt, systemInstruction, true);
-        const parsed = JSON.parse(responseText);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          queries = parsed.map(q => String(q).trim()).filter(Boolean);
-          logger.info(`🤖 [HARNESS SCOUT PLANNING] Determined search queries from RSS trends: ${JSON.stringify(queries)}`);
-        }
-      } catch (err: any) {
-        logger.warn(`Failed to dynamically plan scout queries in harness: ${err.message}. Using fallback dynamically extracted trends: ${JSON.stringify(queries)}`);
-      }
-    } else {
-      logger.info(`🤖 [HARNESS SCOUT PLANNING] Using dynamically extracted trends (no LLM key or empty feeds): ${JSON.stringify(queries)}`);
-    }
-
-    // Fetch markets for each query in parallel (limit to top 15 results per query)
-    const searchPromises = queries.map(q => this.gamma.fetchMarkets(15, q));
-    const resultsArray = await Promise.all(searchPromises);
-    
-    // Fetch top 30 baseline active markets (overall high-volume Polymarket listings)
-    const baselineMarkets = await this.gamma.fetchMarkets(30);
-
-    const allMarketsMap = new Map<string, PolymarketMarket>();
-    
-    // Load baseline first
-    for (const m of baselineMarkets) {
-      allMarketsMap.set(m.id, m);
-    }
-    
-    // Add query matches
-    for (const list of resultsArray) {
-      for (const m of list) {
-        allMarketsMap.set(m.id, m);
-      }
-    }
-
-    return Array.from(allMarketsMap.values());
   }
 
   /**
-   * Evaluates the trading decision using Gemini AI model with feedback sensor loop.
-   * If GEMINI_API_KEY is not defined, falls back to static rule-based calibration.
+   * Helper to save content assets
    */
-  public async evaluateTradeDecisionViaLLM(
-    market: PolymarketMarket,
-    research: {
-      graphContext: string;
-      conflicts: string;
-      facts: string;
-      mandateEvaluation: { allowed: boolean; reason?: string };
+  private saveAssets(assets: ContentAsset[]) {
+    const dir = path.dirname(this.assetsPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
-  ): Promise<{
-    decision: 'YES' | 'NO' | 'HOLD';
-    confidence: number;
-    betAmount: number;
-    reasoning: string;
-  }> {
-    // 1. Fallback to calibrated heuristics if LLM key is missing
-    if (!this.llm.hasApiKey()) {
-      logger.warn('⚠️ No GEMINI_API_KEY configured. Bypassing LLM and using local calibrated weather/momentum heuristics.');
-      
-      let decision: 'YES' | 'NO' | 'HOLD' = 'NO';
-      let confidence = 0.70;
-      let betAmount = 250.00;
-      let reasoningText = '';
+    fs.writeFileSync(this.assetsPath, JSON.stringify(assets, null, 2), 'utf-8');
+  }
 
-      const yesPrice = parseFloat(market.outcomePrices[0] || '0.5');
-      const textContext = (research.graphContext + research.facts + research.conflicts).toLowerCase();
-
-      const hasCausalError = 
-        research.graphContext.includes('Error querying graph') ||
-        research.graphContext.includes('NameResolutionError') ||
-        research.graphContext.includes('HTTPConnectionPool') ||
-        research.facts.includes('Error retrieving facts') ||
-        research.conflicts.includes('Error finding conflicts');
-
-      if (hasCausalError) {
-        decision = 'HOLD';
-        confidence = 0.0;
-        betAmount = 0.0;
-        reasoningText = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--danger-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🚫 DUBSTRATA DATABASE ACCESS ERROR</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">The production server returned a database error or connection failure. Causal context is currently blocked.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">💡 Meaning &amp; Odds Implications</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">Since Dubstrata is our only source of information for trading decisions, we have zero causal insights to validate the contract odds.</span>
-  </div>
-  <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--danger-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;"><strong>CAPITAL PROTECTION ACTIVATED: SUSPEND TRADE (HOLD).</strong> Enforcing capital preservation rules under AGENTS.md.</span>
-  </div>
-</div>
-        `.trim();
-      } else if (market.question.toLowerCase().includes('temperature') || market.slug.toLowerCase().includes('temperature')) {
-        if (market.question.includes('36°C') || market.question.includes('34°C') || market.question.includes('33°C') || market.question.includes('27°C')) {
-          decision = 'NO';
-          confidence = 0.98;
-          betAmount = 250.00;
-          reasoningText = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">📊 Causal Information Analysis</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">Dubstrata climatology records suggest normal seasonal ranges. A peak temperature target is an extreme outlier with zero active thermal pressure triggers.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">💡 Meaning &amp; Odds Implications</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">Implied probability of ${Math.round(yesPrice * 100)}% YES is heavily driven by retail speculation, while true causal probability is virtually 0%.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--success-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;"><strong>BUY NO position executed.</strong> Acquiring NO shares at a heavily discounted price to lock in low-risk capital returns.</span>
-  </div>
-</div>
-          `.trim();
-        } else {
-          decision = 'NO';
-          confidence = 0.85;
-          betAmount = 250.00;
-          reasoningText = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">📊 Causal Information Analysis</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">Forecast data and local weather sweeps remain highly consistent. Speculative spikes represent order-book noise.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">💡 Meaning &amp; Odds Implications</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">A 15% edge between implied odds and historical weather registers.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--success-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;"><strong>BUY NO position executed.</strong> Sizing position to capture secure margins.</span>
-  </div>
-</div>
-          `.trim();
-        }
-      } else {
-        decision = 'NO';
-        confidence = 0.70;
-        betAmount = 250.00;
-        reasoningText = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">📊 Causal Information Analysis</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">Baseline RAG context supports standard execution bounds. No contrarian claims are validated.</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--success-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;"><strong>BUY NO position executed.</strong> Standard sizing applied.</span>
-  </div>
-</div>
-        `.trim();
-      }
-
-      return { decision, confidence, betAmount, reasoning: reasoningText };
+  /**
+   * Run JIT causal research queries on a company/topic using the Dubstrata MCP server
+   */
+  public async researchTopic(topic: string, company?: string): Promise<string> {
+    logger.info(`🧠 Inquiring Dubstrata Causal Graph for topic: "${topic}"...`);
+    const searchTarget = company || topic;
+    
+    let combinedContext = '';
+    try {
+      const graphContext = await this.dubstrata.queryGraph(`What are the downstream causal impacts or architecture performance facts related to ${searchTarget}? Focus on latency, database traversal efficiency, and state validation.`);
+      combinedContext += `--- Graph Query Context ---\n${graphContext}\n\n`;
+    } catch (err: any) {
+      logger.warn(`Dubstrata graph inquiry failed: ${err.message}`);
     }
 
-    // 2. Perform live Gemini decision loop with JSON feedback sensor
-    const yesPrice = parseFloat(market.outcomePrices[0] || '0.5');
-    const noPrice = parseFloat(market.outcomePrices[1] || '0.5');
+    try {
+      const facts = await this.dubstrata.getAllFacts(searchTarget);
+      combinedContext += `--- Primary Facts ---\n${facts}\n\n`;
+    } catch (err: any) {
+      logger.warn(`Dubstrata get_all_facts failed: ${err.message}`);
+    }
 
+    try {
+      const conflicts = await this.dubstrata.findConflicts(searchTarget);
+      combinedContext += `--- Conflict Analysis ---\n${conflicts}\n\n`;
+    } catch (err: any) {
+      logger.warn(`Dubstrata find_conflicts failed: ${err.message}`);
+    }
+
+    return combinedContext || 'No causal graph context retrieved.';
+  }
+
+  /**
+   * Generates a Strategic Geopolitical Decision Brief
+   */
+  public async generateXPulseContent(topic: string): Promise<ContentAsset> {
+    logger.info(`⚡ [CONTENT HARNESS] Planning Strategic Decision Brief for topic: "${topic}"...`);
+    
+    // 1. Research topic using Dubstrata MCP
+    const researchContext = await this.researchTopic(topic);
+
+    // 2. Build system instructions incorporating strategy rules
     const systemInstruction = `
-You are the Causal AI and Quant Portfolio Manager of the Dubstrata fund.
-Your task is to analyze prediction market listings and make an autonomous trading decision based on causal evidence.
+You are the Strata Geopolitical Strategy Director. Your goal is to write a highly analytical Strategic Decision and Risk Brief based on geopolitical alt-data.
+Follow these structural guidelines:
+1. Pacing constraint: Evaluate SVAR impact loops and transaction settlement delays.
+2. Visceral verbs to prioritize: hedge, validate, leverage, audit, decouple.
+3. Subvert standard market assumptions with a pattern interrupt.
+4. Focus on the causal explanation. Provide a forward-looking risk prediction or key indicator to watch.
 
---- RULES OF ENGAGEMENT (AGENTS.md) ---
-1. Dubstrata MCP acts as our absolute, single source of causal truth.
-2. If there are database error flags or outages in the research data (like NameResolutionError), you MUST decide "HOLD" to protect capital.
-3. Your decisions must be mapped to the causal context.
-
-Return ONLY a JSON response in the following schema:
-{
-  "decision": "YES" | "NO" | "HOLD",
-  "confidence": 0.0 to 1.0,
-  "causal_analysis": "Summary of the causal facts and RAG evidence.",
-  "market_implications": "Why the market has mispriced or correctly priced the contract.",
-  "tactical_decision": "HTML explanation of position execution and sizing."
-}
+--- ALGORITHMIC CONSTRAINTS ---
+- DO NOT use banned words: delve, tapestry, testament, beacon, fosters, nuanced, myriad, orchestrate, synergize, elevate.
+- Short, logical points are mandatory for quantitative desks.
+- Focus on causal graph connections, compliance verifications, and target allocations.
 `;
 
     const prompt = `
-Market Question: "${market.question}"
-Category: "${market.category}"
-Current Prices: YES: ${Math.round(yesPrice * 100)}¢ | NO: ${Math.round(noPrice * 100)}¢
+Generate a Strategic Geopolitical Decision Brief for topic: "${topic}".
+Real Causal Context from Dubstrata Graph:
+"${researchContext}"
 
---- DUBSTRATA LIVE CAUSAL GRAPH CONTEXT ---
-${research.graphContext}
-
---- DUBSTRATA ENTITY FACTS ---
-${research.facts}
-
---- DUBSTRATA CONTRARIAN CONFLICT SCAN ---
-${research.conflicts}
-
---- COMPLIANCE LIMITS ---
-EIP-712 Category Allowed: ${research.mandateEvaluation.allowed}
-Details: ${research.mandateEvaluation.reason || 'Approved'}
-
-Please analyze this evidence and return your decision.
-If you see error messages in the Dubstrata graph context (like "NameResolutionError" or "ConnectionPool"), you MUST select "HOLD".
+Draft the brief immediately. Do not include markdown code wrappers or chatty preambles.
 `;
 
-    // Validator sensor closure
-    const validator = (data: any) => {
-      if (typeof data !== 'object' || data === null) {
-        throw new Error('Response is not an object.');
-      }
-      if (!['YES', 'NO', 'HOLD'].includes(data.decision)) {
-        throw new Error(`Invalid decision value: "${data.decision}"`);
-      }
-      if (typeof data.confidence !== 'number' || data.confidence < 0 || data.confidence > 1) {
-        throw new Error(`Invalid confidence score: "${data.confidence}"`);
-      }
-      if (!data.causal_analysis || !data.market_implications || !data.tactical_decision) {
-        throw new Error('Missing descriptive reasoning fields.');
-      }
-      return data;
+    const generatedText = await this.llm.queryModel(prompt, systemInstruction, false);
+
+    // 3. Verify compliance
+    const compliance = ContentComplianceVerifier.verify(generatedText);
+    const assetId = `asset-${crypto.randomBytes(4).toString('hex')}`;
+
+    const asset: ContentAsset = {
+      id: assetId,
+      type: 'GEOPOLITICAL',
+      topic,
+      title: `STRATEGIC BRIEF: ${topic}`,
+      content: generatedText,
+      status: 'PENDING_APPROVAL',
+      timestamp: Date.now(),
+      intervals: {}
     };
 
-    try {
-      const response = await this.llm.queryModelStructured(prompt, systemInstruction, validator);
+    // Save asset to database
+    const assets = this.loadAssets();
+    assets.push(asset);
+    this.saveAssets(assets);
 
-      const formattedReasoning = `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">📊 Causal Information Analysis</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">${response.causal_analysis}</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--accent-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">💡 Meaning &amp; Odds Implications</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">${response.market_implications}</span>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--success-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">${response.tactical_decision}</span>
-  </div>
-</div>
-      `.trim();
-
-      const decision: 'YES' | 'NO' | 'HOLD' = response.decision;
-      const confidence = response.confidence;
-
-      // 3. Dynamic sizing model (Quarter-Kelly allocation)
-      let betAmount = 0.00;
-      if (decision !== 'HOLD') {
-        const impliedProb = decision === 'YES' ? yesPrice : noPrice;
-        const edge = confidence - impliedProb;
-        if (edge > 0) {
-          // Kelly Fraction = edge / (1 - impliedProb) -> Quarter Kelly sizing
-          const kelly = (edge / (1 - impliedProb)) * 0.25;
-          const maxAllowed = 250.00; // compliance check standard size target
-          betAmount = Math.max(10.00, Math.min(maxAllowed, Math.round(kelly * 1000)));
-        } else {
-          // Fallback exploratory size if LLM confidence matches public pricing
-          betAmount = 25.00;
-        }
-      }
-
-      return {
-        decision,
-        confidence,
-        betAmount,
-        reasoning: formattedReasoning
-      };
-    } catch (err: any) {
-      logger.error(`❌ Causal LLM reasoning failed permanently: ${err.message}. Defaulting to HOLD to preserve capital.`);
-      return {
-        decision: 'HOLD',
-        confidence: 0.0,
-        betAmount: 0.0,
-        reasoning: `
-<div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.85rem;">
-  <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--danger-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🚫 SENSOR / LLM EVALUATION FAILURE</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;">The structured LLM query failed validation permanently: ${err.message}</span>
-  </div>
-  <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 0.5rem 0.75rem; border-radius: 6px;">
-    <strong style="color: var(--danger-color); display: block; margin-bottom: 0.2rem; font-size: 0.8rem; letter-spacing: 0.03em; text-transform: uppercase;">🎯 Tactical Trading Decision</strong>
-    <span style="color: var(--text-secondary); line-height: 1.4;"><strong>CAPITAL PROTECTION ACTIVATED: SUSPEND TRADE (HOLD).</strong> Bypassed position to protect trading capital.</span>
-  </div>
-</div>
-        `.trim()
-      };
-    }
-  }
-
-  // Place simulated trade after we make a decision
-  public async executeTradeDecision(
-    market: PolymarketMarket,
-    outcome: 'YES' | 'NO',
-    amountUSD: number,
-    probabilityLLM: number,
-    reasoning: string
-  ) {
-    const dailySpent = this.auditLogger.getDailySpentUSD('antigravity-fund-manager');
-    const mandateResult = this.verifier.evaluateTrade(
-      'antigravity-fund-manager',
-      market.category,
-      amountUSD,
-      dailySpent
-    );
-
-    const intent: TradeIntent = {
-      marketId: market.id,
-      marketQuestion: market.question,
-      outcomeSelected: outcome,
-      probabilityImplied: parseFloat(market.outcomePrices[outcome === 'YES' ? 0 : 1]),
-      probabilityLLM,
-      reasoning,
-      amountUSD,
+    // Append cryptographic audit
+    const intent = {
+      assetId,
+      topic,
+      type: 'GEOPOLITICAL' as const,
+      promptUsed: systemInstruction,
+      causalFactScraped: researchContext.slice(0, 1000),
+      generatedText,
       timestamp: Date.now()
     };
 
-    if (!mandateResult.allowed) {
-      logger.warn(`🚫 Trade Rejected by Mandate: ${mandateResult.reason}`);
-      this.auditLogger.logAudit(
-        intent,
-        'BLOCKED_BY_MANDATE',
-        mandateResult.activeMandate?.signature ? crypto.createHash('sha256').update(mandateResult.activeMandate.signature).digest('hex') : 'none',
-        'FAILED',
-        mandateResult.reason
-      );
-      throw new Error(`Trade Blocked by Compliancy Mandate: ${mandateResult.reason}`);
-    }
+    const complianceHash = crypto.createHash('sha256').update(JSON.stringify(compliance)).digest('hex');
+    this.auditLogger.logAudit(intent, compliance.allowed ? 'PUBLISH' : 'REJECT', complianceHash, 'SIMULATED');
 
-    const price = parseFloat(market.outcomePrices[outcome === 'YES' ? 0 : 1]);
+    return asset;
+  }
 
-    logger.info(`Executing Trade on CLOB: BUY ${outcome} size $${amountUSD}...`);
-    const orderResult = await this.clob.placeOrder(
-      market.id,
-      market.question,
-      outcome,
-      amountUSD,
-      price
-    );
+  /**
+   * Generates a short-form B2B outreach pitch (Outreach Email format)
+   */
+  public async generateB2BOutreach(companyName: string, detail: string): Promise<ContentAsset> {
+    logger.info(`📧 [CONTENT HARNESS] Planning Outreach pitch for ${companyName} (${detail})...`);
 
-    // Cryptographic log append
-    this.auditLogger.logAudit(
-      intent,
-      'BUY',
-      crypto.createHash('sha256').update(mandateResult.activeMandate!.signature).digest('hex'),
-      orderResult.status,
-      undefined,
-      orderResult.price,
-      orderResult.shares,
-      orderResult.txHash
-    );
+    const researchContext = await this.researchTopic(companyName);
 
-    return orderResult;
+    const systemInstruction = `
+You are a senior fund manager and technical sales engineer at Dubstrata. Write a B2B cold outreach email to the engineering team of "${companyName}".
+Follow these guidelines:
+1. Pacing constraint: ${CURRENT_STRATEGY.pacingRule}
+2. Visceral verbs: ${CURRENT_STRATEGY.priorityVerbs.join(', ')}
+3. Theme: ${CURRENT_STRATEGY.outreachPromptAddition}
+
+--- CONSTRAINTS ---
+- DO NOT use banned words: delve, tapestry, testament, beacon, fosters, nuanced, myriad, orchestrate, synergize, elevate.
+- Return a subject line and the email body text.
+`;
+
+    const prompt = `
+Generate personalization for company "${companyName}" on topic "${detail}".
+Causal Context:
+"${researchContext}"
+`;
+
+    const generatedText = await this.llm.queryModel(prompt, systemInstruction, false);
+    const compliance = ContentComplianceVerifier.verify(generatedText);
+    const assetId = `asset-${crypto.randomBytes(4).toString('hex')}`;
+
+    const asset: ContentAsset = {
+      id: assetId,
+      type: 'OUTREACH',
+      topic: `${companyName} outreach`,
+      title: `Outreach to ${companyName}`,
+      content: generatedText,
+      status: 'PENDING_APPROVAL',
+      timestamp: Date.now(),
+      intervals: {}
+    };
+
+    const assets = this.loadAssets();
+    assets.push(asset);
+    this.saveAssets(assets);
+
+    const intent = {
+      assetId,
+      topic: companyName,
+      type: 'OUTREACH' as const,
+      promptUsed: systemInstruction,
+      causalFactScraped: researchContext.slice(0, 1000),
+      generatedText,
+      timestamp: Date.now()
+    };
+    const complianceHash = crypto.createHash('sha256').update(JSON.stringify(compliance)).digest('hex');
+    this.auditLogger.logAudit(intent, compliance.allowed ? 'PUBLISH' : 'REJECT', complianceHash, 'SIMULATED');
+
+    return asset;
+  }
+
+  /**
+   * Generates a 7-step analytical video script beat sheet
+   */
+  public async generateVideoScript(topic: string, context: string): Promise<ContentAsset> {
+    logger.info(`🎬 [CONTENT HARNESS] Synthesizing video script on: "${topic}"...`);
+
+    const systemInstruction = `
+You are an elite business/tech video essayist. Write a continuous spoken script for a video.
+Follow these guidelines:
+1. Pacing: Alternate sentence lengths. No chatty intros or outros.
+2. Structure: ${CURRENT_STRATEGY.videoPromptAddition}
+
+--- CONSTRAINTS ---
+- DO NOT use banned words: delve, tapestry, testament, beacon, fosters, nuanced, myriad, orchestrate, synergize, elevate.
+`;
+
+    const prompt = `
+Create a video script for topic "${topic}".
+Background Context:
+"${context}"
+`;
+
+    const generatedText = await this.llm.queryModel(prompt, systemInstruction, false);
+    const compliance = ContentComplianceVerifier.verify(generatedText);
+    const assetId = `asset-${crypto.randomBytes(4).toString('hex')}`;
+
+    const asset: ContentAsset = {
+      id: assetId,
+      type: 'VIDEO',
+      topic,
+      title: `Video script: ${topic}`,
+      content: generatedText,
+      status: 'PENDING_APPROVAL',
+      timestamp: Date.now(),
+      intervals: {}
+    };
+
+    const assets = this.loadAssets();
+    assets.push(asset);
+    this.saveAssets(assets);
+
+    const intent = {
+      assetId,
+      topic,
+      type: 'VIDEO' as const,
+      promptUsed: systemInstruction,
+      causalFactScraped: context.slice(0, 1000),
+      generatedText,
+      timestamp: Date.now()
+    };
+    const complianceHash = crypto.createHash('sha256').update(JSON.stringify(compliance)).digest('hex');
+    this.auditLogger.logAudit(intent, compliance.allowed ? 'PUBLISH' : 'REJECT', complianceHash, 'SIMULATED');
+
+    return asset;
   }
 }
