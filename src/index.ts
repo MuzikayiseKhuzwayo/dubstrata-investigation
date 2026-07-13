@@ -12,6 +12,24 @@ async function main() {
   logger.info('       ⚡ DUBSTRATA-MCP CAUSAL CONTENT ENGINE & HARNESS ⚡      ');
   logger.info('================================================================');
 
+  // Parse command-line port arguments
+  let port = 3000;
+  const portIndex = process.argv.findIndex(arg => arg === '--port' || arg === '-p');
+  if (portIndex !== -1 && process.argv[portIndex + 1]) {
+    const parsed = parseInt(process.argv[portIndex + 1], 10);
+    if (!isNaN(parsed)) {
+      port = parsed;
+    }
+  } else if (process.env.PORT) {
+    const parsed = parseInt(process.env.PORT, 10);
+    if (!isNaN(parsed)) {
+      port = parsed;
+    }
+  }
+
+  // Synchronise port into the environment for server.ts
+  process.env.PORT = port.toString();
+
   const harness = new TradingAgentHarness();
   
   // 1. Initialise connection to Dubstrata MCP server
@@ -41,7 +59,7 @@ async function main() {
   );
 
   logger.info('================================================================');
-  logger.info('🔥 ENGINE RUNNING. Open http://localhost:3000 to view dashboard.');
+  logger.info(`🔥 ENGINE RUNNING. Open http://localhost:${port} to view dashboard.`);
   logger.info('================================================================');
 
   // Graceful shutdown handling
